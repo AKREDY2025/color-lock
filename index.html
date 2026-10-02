@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Color Lock: Escape the Grid</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#101522;color:#fff;display:flex;justify-content:center;min-height:100vh}
+  .app{width:min(980px,100%);padding:18px}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+  h1{font-size:26px;margin:0}
+  .stats{display:flex;gap:8px;flex-wrap:wrap}
+  .pill{background:#1b2435;border:1px solid #34415a;border-radius:10px;padding:8px 12px;font-size:14px}
+  .game{background:#171e2d;border:1px solid #34415a;border-radius:18px;padding:16px;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+  .message{text-align:center;min-height:28px;font-weight:700;margin:4px 0 12px}
+  .board{display:grid;gap:8px;max-width:620px;margin:0 auto;background:#0d1220;padding:10px;border-radius:14px}
+  .cell{aspect-ratio:1;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;user-select:none;cursor:pointer;transition:transform .08s,filter .15s}
+  .cell:hover{filter:brightness(1.15)}
+  .cell:active{transform:scale(.94)}
+  .red{background:#e74c3c}.blue{background:#3498db}.green{background:#2ecc71}.yellow{background:#f1c40f;color:#171717}
+  .purple{background:#9b59b6}.orange{background:#e67e22}.blocked{background:#283247;color:#8d9ab0;cursor:default}
+  .lock{box-shadow:inset 0 0 0 3px rgba(255,255,255,.55)}
+  .key{outline:4px solid #fff;outline-offset:-7px}
+  .target{box-shadow:inset 0 0 0 4px rgba(0,0,0,.28)}
+  .controls{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:16px}
+  button{border:0;border-radius:10px;padding:11px 16px;font-weight:800;cursor:pointer;background:#2d8cff;color:white}
+  button.secondary{background:#34415a}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .help{max-width:620px;margin:14px auto 0;color:#b7c1d4;font-size:14px;line-height:1.5;text-align:center}
+  .overlay{position:fixed;inset:0;background:rgba(5,8,14,.82);display:flex;align-items:center;justify-content:center;padding:20px;z-index:5}
+  .card{width:min(520px,100%);background:#171e2d;border:1px solid #42506a;border-radius:20px;padding:28px;text-align:center}
+  .card h2{margin-top:0;font-size:30px}
+  .card p{color:#c1cada;line-height:1.55}
+  .small{font-size:13px;color:#8f9bb0}
+  @media(max-width:600px){h1{font-size:20px}.game{padding:10px}.cell{font-size:18px}.pill{padding:7px 9px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <h1>COLOR LOCK</h1>
+    <div class="stats">
+      <div class="pill">Level <span id="level">1</span>/20</div>
+      <div class="pill">Moves <span id="moves">0</span></div>
+      <div class="pill">Score <span id="score">0</span></div>
+    </div>
+  </div>
+
+  <div class="game">
+    <div class="message" id="message">Match each key with the lock of the same color.</div>
+    <div class="board" id="board"></div>
+    <div class="controls">
+      <button id="restart">Restart Level</button>
+      <button id="next" class="secondary" disabled>Next Level</button>
+    </div>
+    <div class="help">
+      Tap or click a colored key, then tap the matching lock. Clear every lock to finish the level.
+      Later levels add blockers, extra colors and more locks.
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="startOverlay">
+  <div class="card">
+    <h2>COLOR LOCK</h2>
+    <p>A fast puzzle challenge built for short gameplay videos. Match every key to its same-color lock using as few moves as possible.</p>
+    <button id="start">Start Game</button>
+    <p class="small">Tip: Try to solve each level quickly and beat your previous score.</p>
+  </div>
+</div>
+
+<script>
+const colors = ["red","blue","green","yellow","purple","orange"];
+const symbols = {red:"◆",blue:"●",green:"▲",yellow:"★",purple:"✦",orange:"⬟"};
+
+const levels = [
+  {n:3, keys:[0,4,8], locks:[2,6,7]},
+  {n:3, keys:[0,5,8], locks:[1,3,7]},
+  {n:3, keys:[0,2,6,8], locks:[1,3,5,7]},
+  {n:4, keys:[0,5,10,15], locks:[3,6,9,12], blocks:[2,7,8,13]},
+  {n:4, keys:[0,3,12,15], locks:[2,5,10,13], blocks:[6,7,8,9]},
+  {n:4, keys:[1,4,11,14], locks:[3,6,9,12], blocks:[0,5,10,15]},
+  {n:5, keys:[0,6,12,18,24], locks:[4,8,16,20,22], blocks:[2,7,11,13,17]},
+  {n:5, keys:[1,5,13,19,23], locks:[3,7,11,17,21], blocks:[0,6,12,18,24]},
+  {n:5, keys:[0,4,10,20,24], locks:[2,8,14,16,22], blocks:[6,7,11,12,17,18]},
+  {n:5, keys:[2,6,12,18,22], locks:[0,4,10,20,24], blocks:[7,8,11,13,16,17]},
+  {n:6, keys:[0,7,14,21,28,35], locks:[5,10,15,20,25,30], blocks:[2,3,8,9,16,17,18,23,24,32]},
+  {n:6, keys:[1,6,12,23,29,34], locks:[4,11,17,19,27,33], blocks:[2,3,8,9,14,15,20,21,26,31]},
+  {n:6, keys:[0,5,12,23,30,35], locks:[2,11,16,19,24,33], blocks:[6,7,8,13,14,20,21,28,29]},
+  {n:6, keys:[3,8,14,21,27,32], locks:[0,5,11,18,24,35], blocks:[1,2,7,13,20,26,33,34]},
+  {n:6, keys:[0,10,12,23,25,35], locks:[5,7,14,17,28,30], blocks:[2,3,4,8,9,20,21,26,27,32]},
+  {n:6, keys:[1,6,17,18,29,34], locks:[4,11,14,23,26,31], blocks:[2,3,8,9,10,15,16,20,21,27,28,33]},
+  {n:7, keys:[0,8,16,24,32,40,48], locks:[6,12,20,28,34,42,46], blocks:[2,3,9,10,18,19,29,30,38,39,45]},
+  {n:7, keys:[3,9,15,21,27,39,45], locks:[1,7,13,25,31,37,47], blocks:[2,8,14,16,22,23,28,29,35,36,42]},
+  {n:7, keys:[0,6,12,24,30,42,48], locks:[4,10,16,32,38,44,46], blocks:[1,2,7,8,18,19,25,26,36,37,43]},
+  {n:7, keys:[2,10,14,24,34,38,46], locks:[4,12,20,30,40,42,48], blocks:[0,1,8,9,16,17,23,31,32,39,45]}
+];
+
+let level = 0, score = 0, moves = 0, selected = null, solved = false;
+let state = [];
+
+function buildLevel(){
+  const L = levels[level];
+  const total = L.n * L.n;
+  state = Array.from({length:total},()=>({type:"empty",color:null}));
+  const shuffled = [...colors].sort(()=>Math.random()-.5).slice(0, L.keys.length);
+  L.keys.forEach((p,i)=>state[p]={type:"key",color:shuffled[i]});
+  const lockColors = [...shuffled].sort(()=>Math.random()-.5);
+  L.locks.forEach((p,i)=>state[p]={type:"lock",color:lockColors[i]});
+  (L.blocks||[]).forEach(p=>state[p]={type:"blocked",color:null});
+  selected = null; solved=false; moves=0;
+  render();
+}
+
+function render(){
+  const L=levels[level];
+  const board=document.getElementById("board");
+  board.style.gridTemplateColumns=`repeat(${L.n},1fr)`;
+  board.innerHTML="";
+  state.forEach((c,i)=>{
+    const el=document.createElement("div");
+    el.className="cell "+(c.type==="blocked"?"blocked":(c.color||""));
+    if(c.type==="key") el.classList.add("key");
+    if(c.type==="lock") el.classList.add("lock");
+    if(c.type==="lock") el.classList.add("target");
+    el.dataset.i=i;
+    if(c.type==="key"||c.type==="lock"){
+      el.textContent=symbols[c.color];
+      el.title=c.type==="key"?"Key":"Lock";
+    }else if(c.type==="blocked") el.textContent="×";
+    el.onclick=()=>clickCell(i);
+    board.appendChild(el);
+  });
+  document.getElementById("level").textContent=level+1;
+  document.getElementById("moves").textContent=moves;
+  document.getElementById("score").textContent=score;
+  document.getElementById("next").disabled=!solved;
+}
+
+function clickCell(i){
+  const c=state[i];
+  if(c.type==="blocked") return;
+
+  if(c.type==="key"){
+    selected = selected===i ? null : i;
+    document.getElementById("message").textContent =
+      selected===null ? "Select a key, then select its matching lock." : `Key selected. Find the ${c.color} lock.`;
+    renderSelection();
+    return;
+  }
+
+  if(c.type==="lock" && selected!==null){
+    const key=state[selected];
+    if(key.type==="key" && key.color===c.color){
+      state[selected]={type:"empty",color:null};
+      state[i]={type:"empty",color:null};
+      moves++;
+      score += Math.max(20, 120 - moves*5 + (level*3));
+      selected=null;
+      if(!state.some(x=>x.type==="lock")){
+        solved=true;
+        score += 100 + Math.max(0, 60-moves*4);
+        document.getElementById("message").textContent =
+          `LEVEL ${level+1} CLEARED! Score + bonus.`;
+      }else{
+        document.getElementById("message").textContent="Perfect match. Keep going.";
+      }
+      render();
+    }else{
+      moves++;
+      score=Math.max(0,score-5);
+      document.getElementById("message").textContent="Wrong color. Try again.";
+      render();
+      renderSelection();
+    }
+  }
+}
+
+function renderSelection(){
+  [...document.querySelectorAll(".cell")].forEach(el=>{
+    if(Number(el.dataset.i)===selected){
+      el.style.outline="4px solid white";
+      el.style.outlineOffset="-4px";
+      el.style.filter="brightness(1.25)";
+    }
+  });
+}
+
+document.getElementById("restart").onclick=()=>buildLevel();
+document.getElementById("next").onclick=()=>{
+  if(!solved)return;
+  if(level<levels.length-1){level++;buildLevel();}
+  else{
+    document.getElementById("message").textContent=`YOU BEAT ALL 20 LEVELS! FINAL SCORE: ${score}`;
+    document.getElementById("next").disabled=true;
+  }
+};
+document.getElementById("start").onclick=()=>{
+  document.getElementById("startOverlay").style.display="none";
+  buildLevel();
+};
+buildLevel();
+</script>
+</body>
+</html>
